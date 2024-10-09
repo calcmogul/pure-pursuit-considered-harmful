@@ -1,0 +1,243 @@
+\documentclass[10pt,conference,compsoc]{IEEEtran}
+
+\usepackage{amsmath}
+\DeclareMathOperator{\sgn}{sgn}
+\usepackage{bm}
+\usepackage{datetime}
+\usepackage{enumerate}
+\usepackage{graphicx}
+\PassOptionsToPackage{hyphens}{url}
+  \usepackage[colorlinks=true,linkcolor=blue]{hyperref}
+\usepackage{import}
+\usepackage{listings}
+\usepackage{lmodern}
+\usepackage{parskip}
+\usepackage{tabulary}
+
+% Load after hyperref
+\usepackage[style=super,nonumberlist,toc]{glossaries}
+\usepackage[notlof, notlot, nottoc]{tocbibind}
+\usepackage{tocloft}
+
+% Set up snippet environment
+\newcommand{\listsnippetsname}{\Large List of Snippets}
+\newlistof{snippets}{los}{\listsnippetsname}
+\cftsetindents{snippets}{\parindent}{1.5\parindent}
+\newenvironment{snippet}{
+  \renewcommand{\caption}[1]{
+    \refstepcounter{snippets}
+    \begin{center}
+      \par\noindent{\footnotesize Snippet \thesnippets. ##1}
+    \end{center}
+    \addcontentsline{los}{snippets}
+      {\protect \numberline{\thesnippets}{\ignorespaces ##1}}
+  }
+}
+{\par\noindent}
+
+% Disable automatic indent and provide \indent command
+\newlength\tindent
+\setlength{\tindent}{\parindent}
+\setlength{\parindent}{0pt}
+\renewcommand{\indent}{\hspace*{\tindent}}
+
+% Paper header
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\lhead{Pure Pursuit Considered Harmful}
+\rhead{\thepage}
+\lfoot{}
+\rfoot{}
+\fancyfoot[C]{}  % remove normal page numbers
+
+\allowdisplaybreaks
+\begin{document}
+
+\title{Pure Pursuit Considered Harmful \\ \large Why trajectory trackers should be used instead of pure pursuit}
+\author{Tyler Veness}
+\maketitle
+
+\section{Theoretical and practical deficiencies}
+
+Pure pursuit is a fun exercise, but it's inferior to other nonlinear
+controllers.
+
+I fundamentally disagree with pure pursuit's controller methodology. I think a
+trajectory controller should be offered too. Here's why I dislike pure pursuit:
+\begin{enumerate}
+  \item It doesn't offer direct control over heading (or in the case of swerve,
+    the velocity vector).
+  \item If the robot is already on the path, it won't stay on it around corners
+    due to the lookahead point. This is a fundamental feature of pursuit
+    controllers that can't be fixed completely. It's problematic in the presence
+    of obstacles.
+  \item Because the robot deviates from the path all the time, it's harder to
+    meticulously plan where the robot goes.
+  \item It has unstable behavior at the ends of paths that has to be worked
+    around by stopping the controller early or artificially extending the
+    trajectory via the tangent to the last waypoint.
+  \item It doesn't let you enforce dynamics constraints on the path, or have
+    much control over the time domain response of the robot at all.
+\end{enumerate}
+
+Essentially, instead of trajectory and controller tuning, you now have to do
+path tuning to make the robot do what you want.
+
+\section{Arguments I've seen for pure pursuit and responses}
+\begin{quote}
+  There’s a lot of reasons I currently like using it, but they pretty much all
+  stem from the ability to do on the fly “generation” instead of generating all
+  path states ahead of time.
+
+  So, if you get hit off course by another robot it will be able to react
+  gracefully and get back on track instead of over correcting and going max
+  speed to get back to what the state should be at that point in time.
+\end{quote}
+
+Spline trajectories can be replanned on the fly, even with kinematic and dynamic
+constraints.
+\begin{quote}
+  Another reason this is really useful is that paths don’t need to have a known
+  starting state. You can follow a path from a standstill right at the start
+  point, far away from the start point, halfway through the path already, or
+  driving full speed into it and the controller will handle it.
+\end{quote}
+
+Since you need odometry for the correction to work anyway, you know the starting
+point. You could replan the trajectory instead, which can be cheap.
+Alternatively, given a pose+velocity controller in the chassis coordinate frame,
+you could adjust the ratio between the x and y position gains to change the
+robot's approach.
+\begin{quote}
+  This also makes pathfinding a lot easier to work with. You can just take a
+  list of points and follow them instead of having to worry about using them to
+  create a continuous path, then generate all the path states with it.
+\end{quote}
+
+This goes back to my difference in philosophy: I want to control exactly what my
+robot is doing at all times.
+\begin{quote}
+  Finally, tuning the controller doesn’t really seem necessary at the moment
+  (there will still be the ability to do so), so getting it up and running is
+  much simpler and faster.
+\end{quote}
+
+It does leave performance on the table though. In general, a feedback controller
+arbitrarily deviating from the path would be considered poor controller tuning;
+pure pursuit does that on purpose.
+
+\section{Derivation}
+
+$(x_r, y_r, \theta_r)$ is the robot's pose.
+
+$(x_i, y_i)$ is the turning circle's intersection point with a path. It's the
+closest point to robot that's on the path plus some lookahead distance along the
+path.
+
+$(x_c, y_c)$ is intersection circle's center. The robot's pose is tangent to the
+circle.
+
+We want to know the radius of the circle formed by the robot's pose tangent to
+the circle and the intersection point. First, we'll find the center of the
+circle by finding the intersection of the line through the robot's pose
+perpendicular its heading, and the perpendicular bisector between $(x_i, y_i)$
+and $(x_r, y_r)$. Then, we'll find the radius of this circle, which is the
+turning radius of the robot.
+
+We'll be using the point-slope form of a line $y - y_1 = m(x - x_1)$ throughout
+this derivation.
+
+\subsection{Line parallel to robot}
+
+The line going through the robot's translation and parallel to the robot's
+heading is
+\begin{align*}
+  y - y_1 &= m(x - x_1) \\
+  y - y_r &= m(x - x_r) \\
+  y - y_r &= \tan\theta_r (x - x_r) \\
+  y - y_r &= \frac{\sin\theta_r}{\cos\theta_r} (x - x_r)
+  \intertext{We want the line perpendicular to that so}
+  y - y_r &= -\frac{\cos\theta_r}{\sin\theta_r} (x - x_r) \\
+  \sin\theta_r (y - y_r) &= -\cos\theta_r (x - x_r) \\
+  \sin\theta_r y - \sin\theta_r y_r &= -\cos\theta_r x + \cos\theta_r x_r \\
+  \cos\theta_r x + \sin\theta_r y &= \cos\theta_r x_r + \sin\theta_r y_r
+\end{align*}
+
+\subsection{Perpendicular bisector between robot and intersection point}
+
+We want the perpendicular bisector between $(x_i, y_i)$ and $(x_r, y_r)$.
+The slope is $\frac{y_i - y_r}{x_i - x_r}$, and the slope of the perpendicular
+bisector is thus $-\frac{x_i - x_r}{y_i - y_r}$. The bisector is located halfway
+between $(x_i, y_i)$ and $(x_r, y_r)$.
+\begin{align*}
+  y - y_1 &= m(x - x_1) \\
+  y - \frac{y_i + y_r}{2} &=
+    -\frac{x_i - x_r}{y_i - y_r} \left(x - \frac{x_i + x_r}{2}\right) \\
+  y - 0.5(y_i + y_r) &= -\frac{x_i - x_r}{y_i - y_r} (x - 0.5(x_i + x_r)) \\
+  (y_i - y_r) (y - 0.5(y_i + y_r)) &= -(x_i - x_r) (x - 0.5(x_i + x_r)) \\
+  (y_i - y_r) y - 0.5(y_i^2 - y_r^2) &= -(x_i - x_r) x + 0.5(x_i^2 - x_r^2) \\
+  (x_i - x_r) x + (y_i - y_r) y &= 0.5(x_i^2 - x_r^2) + 0.5(y_i^2 - y_r^2) \\
+  2(x_i - x_r) x + 2(y_i - y_r) y &= x_i^2 - x_r^2 + y_i^2 - y_r^2 \\
+  2(x_i - x_r) x + 2(y_i - y_r) y &= (x_i^2 + y_i^2) - (x_r^2 + y_r^2)
+\end{align*}
+
+\subsection{Finding the circle center}
+
+The circle center is where the two perpendicular lines intersect. Let's make a
+system of linear equations to find it.
+\begin{align*}
+  \cos\theta_r x_c + \sin\theta_r y_c &= \cos\theta_r x_r + \sin\theta_r y_r \\
+  2(x_i - x_r) x_c + 2(y_i - y_r) y_c &= (x_i^2 + y_i^2) - (x_r^2 + y_r^2)
+  \intertext{}
+  \begin{bmatrix}
+    \cos\theta_r & \sin\theta_r \\
+    2(x_i - x_r) & 2(y_i - y_r)
+  \end{bmatrix}
+  \begin{bmatrix}
+    x_c \\
+    y_c
+  \end{bmatrix} &=
+    \begin{bmatrix}
+      \cos\theta_r x_r + \sin\theta_r y_r \\
+      (x_i^2 + y_i^2) - (x_r^2 + y_r^2)
+    \end{bmatrix}
+\end{align*}
+
+Now solve the system.
+\begin{align*}
+  \begin{bmatrix}
+    x_c \\
+    y_c
+  \end{bmatrix} &=
+    \begin{bmatrix}
+      \cos\theta_r & \sin\theta_r \\
+      2(x_i - x_r) & 2(y_i - y_r)
+    \end{bmatrix}^{-1}
+    \begin{bmatrix}
+      \cos\theta_r x_r + \sin\theta_r y_r \\
+      (x_i^2 + y_i^2) - (x_r^2 + y_r^2)
+    \end{bmatrix} \\
+  \begin{bmatrix}
+    x_c \\
+    y_c
+  \end{bmatrix} &=
+    \frac{1}{2(y_i - y_r)\cos\theta_r - 2(x_i - x_r)\sin\theta_r} \\
+    &\qquad
+    \begin{bmatrix}
+      2(y_i - y_r) & -\sin\theta_r \\
+      -2(x_i - x_r) & \cos\theta_r
+    \end{bmatrix}
+    \begin{bmatrix}
+      \cos\theta_r x_r + \sin\theta_r y_r \\
+      (x_i^2 + y_i^2) - (x_r^2 + y_r^2)
+    \end{bmatrix}
+\end{align*}
+
+\subsection{Finding the turning radius}
+
+The turning radius is the circle's radius.
+\begin{align*}
+  r = \sqrt{(x_r - x_c)^2 + (y_r - y_c)^2}
+\end{align*}
+
+\end{document}
