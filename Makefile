@@ -16,7 +16,6 @@ $(TARGET): $(basename $(TARGET)).tex $(BIB)
 .PHONY: format
 format:
 	./lint/format_eol.py
-	./lint/format_json.py
 	./lint/format_paragraph_breaks.py
 	python3 -m black -q .
 
