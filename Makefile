@@ -17,7 +17,7 @@ $(TARGET): $(basename $(TARGET)).tex $(BIB)
 format:
 	./lint/format_eol.py
 	./lint/format_paragraph_breaks.py
-	python3 -m black -q .
+	python -m black -q .
 
 .PHONY: lint
 lint: format
@@ -74,4 +74,4 @@ setup_ubuntu:
 	# Python packages
 	#   * black (to format Python source code)
 	#   * pylint (for Python linting)
-	pip3 install --user --break-system-packages autoflake black==24.3.0 pylint
+	pip install --user --break-system-packages autoflake black==24.3.0 pylint
