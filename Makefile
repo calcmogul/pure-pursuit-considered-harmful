@@ -34,6 +34,7 @@ clean: clean_tex
 .PHONY: clean_tex
 clean_tex:
 	latexmk -xelatex -C
+	rm -f *.bbl
 	rm -f $(TARGET)
 
 .PHONY: upload
